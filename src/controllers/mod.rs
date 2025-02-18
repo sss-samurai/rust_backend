@@ -1,3 +1,5 @@
-pub mod create_product;
+pub mod create_and_edit_product;
+pub mod delete_product;
 pub mod first_function;
 pub mod get_product_data_by_id;
+pub mod signup_user;

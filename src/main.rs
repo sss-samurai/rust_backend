@@ -1,6 +1,7 @@
 use actix_web::middleware::Logger;
 use actix_web::{App, HttpServer};
 mod controllers;
+mod models;
 mod routes;
 mod utils;
 use routes::configure_routes::configure_routes;
