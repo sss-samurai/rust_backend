@@ -63,7 +63,7 @@ pub async fn create_data(table: &str, data: Value) -> Result<String, String> {
 
     // Create the SQL query string with schema (shop) and table name
     let query = format!(
-        "INSERT INTO shop.{} ({}) VALUES ({}) RETURNING *", // We use RETURNING * to get inserted row
+        "INSERT INTO storefront.{} ({}) VALUES ({}) RETURNING *", // We use RETURNING * to get inserted row
         table, columns_str, placeholders
     );
 

@@ -1,8 +1,11 @@
+// src/handlers/signup_user.rs
+
 use crate::models::user::User;
-use crate::utils::create_data::create_data;
+use crate::utils::record_handler::RecordHandler;
 use actix_web::{web, HttpResponse, Responder};
 use serde::Serialize;
 use serde_json::{json, Value};
+
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
@@ -16,7 +19,13 @@ pub async fn signup_user(json_data: web::Json<Value>) -> impl Responder {
                     error: validation_error,
                 });
             }
-            match create_data("users", json!(user)).await {
+
+            // return HttpResponse::Ok().json(json!({
+            //     "message": "Validation successful, but stopping here for experiment",
+            //     "data": user
+            // }));
+
+            match RecordHandler::create_data("users", json!(user)).await {
                 Ok(created_user) => HttpResponse::Ok().json(json!({
                     "message": "User created successfully",
                     "data": created_user
