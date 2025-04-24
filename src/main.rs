@@ -15,6 +15,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .configure(configure_routes)
     })
+    // .workers(12)
     .bind("127.0.0.1:8080")?
     .run()
     .await

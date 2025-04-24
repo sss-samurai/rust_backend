@@ -8,32 +8,24 @@ use tokio_postgres::NoTls;
 pub struct RecordHandler;
 
 impl RecordHandler {
-    pub async fn create_data(table: &str, data: Value) -> Result<String, String> {
-        println!("Creating data...");
-
+    pub async fn create_data(table: String, data: Value) -> Result<String, String> {
         dotenv().ok();
-
         let database_url =
             env::var("DATABASE_URL").expect("DATABASE_URL environment variable not set");
-
         let (client, connection) = match tokio_postgres::connect(&database_url, NoTls).await {
             Ok(conn) => conn,
             Err(e) => return Err(format!("Error connecting to database: {}", e)),
         };
-
         tokio::spawn(async move {
             if let Err(e) = connection.await {
                 eprintln!("Connection error: {}", e);
             }
         });
-
         let data_object = match data.as_object() {
             Some(obj) => obj,
             None => return Err("Invalid JSON data, expected a JSON object.".to_string()),
         };
-
         let columns: Vec<String> = data_object.keys().cloned().collect();
-
         let values: Result<Vec<Box<dyn tokio_postgres::types::ToSql + Sync>>, String> =
             data_object
                 .values()
@@ -41,10 +33,37 @@ impl RecordHandler {
                     Value::String(s) => {
                         Ok(Box::new(s.clone()) as Box<dyn tokio_postgres::types::ToSql + Sync>)
                     }
-                    Value::Number(n) if n.is_i64() => Ok(Box::new(n.as_i64().unwrap())
-                        as Box<dyn tokio_postgres::types::ToSql + Sync>),
-                    Value::Number(n) if n.is_f64() => Ok(Box::new(n.as_f64().unwrap())
-                        as Box<dyn tokio_postgres::types::ToSql + Sync>),
+                    Value::Number(n) => {
+                        if let Some(f) = n.as_f64() {
+                            if f >= i8::MIN as f64 && f <= i8::MAX as f64 {
+                                return Ok(Box::new(f as i8)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            } else if f >= i16::MIN as f64 && f <= i16::MAX as f64 {
+                                return Ok(Box::new(f as i16)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            } else if f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+                                return Ok(Box::new(f as i32)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            } else if f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                                return Ok(Box::new(f as i64)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            } else if f >= u32::MIN as f64 && f <= u32::MAX as f64 {
+                                return Ok(Box::new(f as u32)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            }
+
+                            // Handle u8 as i8 (as u8 fits in i8, but only 0 to 127)
+                            if f >= u8::MIN as f64 && f <= u8::MAX as f64 {
+                                return Ok(Box::new(f as i8)
+                                    as Box<dyn tokio_postgres::types::ToSql + Sync>);
+                            }
+
+                            // For floating point numbers, store as f64 or f32
+                            Ok(Box::new(f) as Box<dyn tokio_postgres::types::ToSql + Sync>)
+                        } else {
+                            Err(format!("Unsupported numeric type: {:?}", n))
+                        }
+                    }
                     Value::Bool(b) => {
                         Ok(Box::new(*b) as Box<dyn tokio_postgres::types::ToSql + Sync>)
                     }
@@ -53,13 +72,11 @@ impl RecordHandler {
                 .collect();
 
         let values = values?;
-
         let columns_str = columns.join(", ");
         let placeholders = (1..=columns.len())
             .map(|i| format!("${}", i))
             .collect::<Vec<String>>()
             .join(", ");
-
         let query = format!(
             "INSERT INTO storefront.{} ({}) VALUES ({}) RETURNING *",
             table, columns_str, placeholders
@@ -67,23 +84,20 @@ impl RecordHandler {
 
         let values_ref: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
             values.iter().map(|v| &**v).collect();
-
         match client.query_one(&query, &values_ref).await {
             Ok(row) => {
                 println!("Inserted row: {:?}", row);
                 Ok("Data inserted successfully.".to_string())
             }
             Err(e) => {
-                println!("Query: {}", query);
-                println!("Values: {:?}", values_ref);
+                // println!("Query: {}", query);
+                // println!("Values: {:?}", values_ref);
                 Err(format!("Error executing query: {}", e))
             }
         }
     }
-
     pub async fn edit_data(table: &str, data: &Value, id: i64) -> Result<String, String> {
         println!("Editing data...");
-
         dotenv().ok();
 
         let database_url =
@@ -93,22 +107,17 @@ impl RecordHandler {
             Ok(conn) => conn,
             Err(e) => return Err(format!("Error connecting to database: {}", e)),
         };
-
         tokio::spawn(async move {
             if let Err(e) = connection.await {
                 eprintln!("Connection error: {}", e);
             }
         });
-
         let data_object = match data.as_object() {
             Some(obj) => obj,
             None => return Err("Invalid JSON data, expected a JSON object.".to_string()),
         };
-
         let columns: Vec<String> = data_object.keys().cloned().collect();
-
         let mut values: Vec<Box<dyn tokio_postgres::types::ToSql + Sync>> = Vec::new();
-
         for v in data_object.values() {
             match v {
                 Value::String(s) => {
@@ -126,23 +135,19 @@ impl RecordHandler {
                 _ => return Err(format!("Unsupported data type in JSON object: {:?}", v)),
             }
         }
-
         let set_clause = columns
             .iter()
             .enumerate()
             .map(|(i, col)| format!("{} = ${}", col, i + 1))
             .collect::<Vec<String>>()
             .join(", ");
-
         let query = format!(
             "UPDATE shop.{} SET {} WHERE id = ${};",
             table,
             set_clause,
             columns.len() + 1
         );
-
         values.push(Box::new(id) as Box<dyn tokio_postgres::types::ToSql + Sync>);
-
         let values_ref: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
             values.iter().map(|v| &**v).collect();
 
@@ -168,21 +173,17 @@ impl RecordHandler {
                 eprintln!("Connection error: {}", e);
             }
         });
-
         let query = format!("SELECT * FROM shop.{} WHERE id = $1", table);
         let stmt = client.prepare(&query).await?;
         let rows = client.query(&stmt, &[&id]).await?;
-
         if rows.is_empty() {
             return Err(anyhow!("No data found"));
         }
-
         let column_names: Vec<String> = rows[0]
             .columns()
             .iter()
             .map(|col| col.name().to_string())
             .collect();
-
         let row = &rows[0];
         let mut row_data = HashMap::new();
 
